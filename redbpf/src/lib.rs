@@ -1301,6 +1301,7 @@ impl<'base, K: Clone, V: Clone> HashMap<'base, K, V> {
     pub fn new(base: &Map) -> Result<HashMap<K, V>> {
         if mem::size_of::<K>() != base.config.key_size as usize
             || mem::size_of::<V>() != base.config.value_size as usize
+            || bpf_map_type_BPF_MAP_TYPE_HASH != base.config.type_
         {
             return Err(Error::Map);
         }
