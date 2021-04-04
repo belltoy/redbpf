@@ -14,7 +14,7 @@
 //! ```
 pub use crate::bindings::*;
 pub use crate::helpers::*;
-pub use crate::maps::{HashMap, PerfMapFlags};
+pub use crate::maps::*;
 pub use crate::net::*;
 pub use crate::xdp::*;
 pub use cty::*;
