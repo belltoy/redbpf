@@ -184,7 +184,7 @@ define_hashmap!(
     HashMap,
     bpf_map_type_BPF_MAP_TYPE_HASH
 );
-// define_hashmap!(PerCpuHashMap, bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH);  // userspace part is not implemented yet
+define_hashmap!(PerCpuHashMap, bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH);  // userspace part is not implemented yet
 // define_hashmap!(LruHashMap, bpf_map_type_BPF_MAP_TYPE_LRU_HASH);  // userspace part is not implemented yet
 // define_hashmap!(LruPerCpuHashMap, bpf_map_type_BPF_MAP_TYPE_LRU_PERCPU_HASH);  // userspace part is not implemented yet
 define_array!(

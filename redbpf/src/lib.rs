@@ -57,6 +57,8 @@ pub use bpf_sys::uname;
 use bpf_sys::{
     bpf_attach_type_BPF_SK_SKB_STREAM_PARSER, bpf_attach_type_BPF_SK_SKB_STREAM_VERDICT, bpf_insn,
     bpf_map_def, bpf_map_info, bpf_map_type_BPF_MAP_TYPE_ARRAY,
+    bpf_map_type_BPF_MAP_TYPE_HASH,
+    bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH,
     bpf_map_type_BPF_MAP_TYPE_PERCPU_ARRAY, bpf_prog_type, BPF_ANY,
 };
 use goblin::elf::{reloc::RelocSection, section_header as hdr, Elf, SectionHeader, Sym};
@@ -185,6 +187,12 @@ pub struct Map {
 }
 
 pub struct HashMap<'a, K: Clone, V: Clone> {
+    base: &'a Map,
+    _k: PhantomData<K>,
+    _v: PhantomData<V>,
+}
+
+pub struct PerCpuHashMap<'a, K: Clone, V: Clone> {
     base: &'a Map,
     _k: PhantomData<K>,
     _v: PhantomData<V>,
@@ -1350,6 +1358,99 @@ impl<'base, K: Clone, V: Clone> HashMap<'base, K, V> {
             map: self,
             key: None,
         }
+    }
+}
+
+impl<'base, K: Clone, V: Clone> PerCpuHashMap<'base, K, V> {
+    pub fn new(base: &Map) -> Result<PerCpuHashMap<K, V>> {
+        if mem::size_of::<K>() != base.config.key_size as usize
+            || mem::size_of::<V>() != base.config.value_size as usize
+            || bpf_map_type_BPF_MAP_TYPE_PERCPU_HASH != base.config.type_
+        {
+            return Err(Error::Map);
+        }
+
+        Ok(PerCpuHashMap {
+            base,
+            _k: PhantomData,
+            _v: PhantomData,
+        })
+    }
+
+    pub fn set(&self, key: &K, values: &PerCpuValues<V>) -> Result<()> {
+        let count = cpus::get_possible_num();
+        if values.len() != count {
+            return Err(Error::Map);
+        }
+        let value_size = round_up::<V>(8);
+        let alloc_size = value_size * count;
+        let mut alloc = vec![0u8; alloc_size];
+        let ptr = alloc.as_mut_ptr();
+        for i in 0..count {
+            unsafe {
+                let dst_ptr = ptr.offset((value_size * i) as isize) as *const V as *mut V;
+                ptr::write_unaligned::<V>(dst_ptr, values[i].clone());
+            }
+        }
+
+        let rv = unsafe {
+            bpf_sys::bpf_map_update_elem(
+                self.base.fd,
+                key as *const _ as *const _,
+                &ptr as *const _ as *const _,
+                0,
+            )
+        };
+
+        if rv < 0 {
+            Err(Error::Map)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get(&self, key: &K) -> Option<PerCpuValues<V>> {
+        // It is needed to round up the value size to 8*N
+        // cf., https://elixir.bootlin.com/linux/v5.8/source/kernel/bpf/syscall.c#L1035
+        let value_size = round_up::<V>(8);
+        let count = cpus::get_possible_num();
+        let alloc_size = value_size * count;
+        let mut alloc = vec![0u8; alloc_size];
+        let ptr = alloc.as_mut_ptr();
+        if unsafe {
+            bpf_sys::bpf_map_lookup_elem(self.base.fd, key as *const _ as *const _, ptr as *mut _)
+        } < 0
+        {
+            return None;
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for i in 0..count {
+            unsafe {
+                let elem_ptr = ptr.offset((value_size * i) as isize) as *const V;
+                values.push(ptr::read_unaligned(elem_ptr));
+            }
+        }
+
+        Some(PerCpuValues::from_boxed_slice(values.into_boxed_slice()))
+    }
+
+    pub fn delete(&self, key: &K) {
+        unsafe {
+            bpf_sys::bpf_map_delete_elem(self.base.fd, key as *const _ as *const _);
+        }
+    }
+
+    // pub fn iter<'a>(&'a self) -> PerCpuHashMapIter<'a, '_, K, V> {
+    //     PerCpuHashMapIter {
+    //         map: self,
+    //         key: None,
+    //     }
+    // }
+
+    /// Get length of array map
+    pub fn len(&self) -> usize {
+        self.base.config.max_entries as usize
     }
 }
 
