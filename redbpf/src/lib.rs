@@ -1154,8 +1154,8 @@ impl Map {
             unsafe {
                 let ret = bpf_sys::bpf_map_update_elem(
                     map.fd,
-                    &mut 0 as *mut _ as *mut _,
-                    data.as_ptr() as *mut u8 as *mut _,
+                    &0 as *const _ as *const _,
+                    data.as_ptr() as *const u8 as *const _,
                     0,
                 );
                 if ret < 0 {
@@ -1313,12 +1313,12 @@ impl<'base, K: Clone, V: Clone> HashMap<'base, K, V> {
         })
     }
 
-    pub fn set(&self, mut key: K, mut value: V) {
+    pub fn set(&self, key: &K, value: &V) {
         unsafe {
             bpf_sys::bpf_map_update_elem(
                 self.base.fd,
-                &mut key as *mut _ as *mut _,
-                &mut value as *mut _ as *mut _,
+                key as *const _ as *const _,
+                value as *const _ as *const _,
                 0,
             );
         }
@@ -1339,7 +1339,7 @@ impl<'base, K: Clone, V: Clone> HashMap<'base, K, V> {
         Some(unsafe { value.assume_init() })
     }
 
-    pub fn delete(&self, mut key: K) {
+    pub fn delete(&self, key: &K) {
         unsafe {
             bpf_sys::bpf_map_delete_elem(self.base.fd, &mut key as *mut _ as *mut _);
         }
@@ -1371,12 +1371,12 @@ impl<'base, T: Clone> Array<'base, T> {
     /// Set `value` into this array map at `index`
     ///
     /// This method can fail if `index` is out of bound
-    pub fn set(&self, mut index: u32, mut value: T) -> Result<()> {
+    pub fn set(&self, index: u32, value: &T) -> Result<()> {
         let rv = unsafe {
             bpf_sys::bpf_map_update_elem(
                 self.base.fd,
-                &mut index as *mut _ as *mut _,
-                &mut value as *mut _ as *mut _,
+                &index as *const _ as *const _,
+                value as *const _ as *const _,
                 0,
             )
         };
@@ -1391,12 +1391,12 @@ impl<'base, T: Clone> Array<'base, T> {
     ///
     /// This method always returns a `Some(T)` if `index` is valid, but `None`
     /// can be returned if `index` is out of bound.
-    pub fn get(&self, mut index: u32) -> Option<T> {
+    pub fn get(&self, index: u32) -> Option<T> {
         let mut value = MaybeUninit::zeroed();
         if unsafe {
             bpf_sys::bpf_map_lookup_elem(
                 self.base.fd,
-                &mut index as *mut _ as *mut _,
+                &index as *const _ as *const _,
                 &mut value as *mut _ as *mut _,
             )
         } < 0
@@ -1486,7 +1486,7 @@ impl<'base, T: Clone> PerCpuArray<'base, T> {
     /// [`PerCpuValues::new`](./struct.PerCpuValues.html#method.new)
     ///
     /// This method can fail if `index` is out of bound of array map.
-    pub fn set(&self, mut index: u32, values: &PerCpuValues<T>) -> Result<()> {
+    pub fn set(&self, index: u32, values: &PerCpuValues<T>) -> Result<()> {
         let count = cpus::get_possible_num();
         if values.len() != count {
             return Err(Error::Map);
@@ -1496,7 +1496,7 @@ impl<'base, T: Clone> PerCpuArray<'base, T> {
         let value_size = round_up::<T>(8);
         let alloc_size = value_size * count;
         let mut alloc = vec![0u8; alloc_size];
-        let mut ptr = alloc.as_mut_ptr();
+        let ptr = alloc.as_mut_ptr();
         for i in 0..count {
             unsafe {
                 let dst_ptr = ptr.offset((value_size * i) as isize) as *const T as *mut T;
@@ -1506,8 +1506,8 @@ impl<'base, T: Clone> PerCpuArray<'base, T> {
         let rv = unsafe {
             bpf_sys::bpf_map_update_elem(
                 self.base.fd,
-                &mut index as *mut _ as *mut _,
-                &mut ptr as *mut _ as *mut _,
+                &index as *const _ as *const _,
+                &ptr as *const _ as *const _,
                 0,
             )
         };
@@ -1525,7 +1525,7 @@ impl<'base, T: Clone> PerCpuArray<'base, T> {
     /// [`PerCpuValues`](./struct.PerCpuValues.html)
     ///
     /// This method can return None if `index` is out of bound.
-    pub fn get(&self, mut index: u32) -> Option<PerCpuValues<T>> {
+    pub fn get(&self, index: u32) -> Option<PerCpuValues<T>> {
         // It is needed to round up the value size to 8*N
         // cf., https://elixir.bootlin.com/linux/v5.8/source/kernel/bpf/syscall.c#L1035
         let value_size = round_up::<T>(8);
@@ -1534,11 +1534,7 @@ impl<'base, T: Clone> PerCpuArray<'base, T> {
         let mut alloc = vec![0u8; alloc_size];
         let ptr = alloc.as_mut_ptr();
         if unsafe {
-            bpf_sys::bpf_map_lookup_elem(
-                self.base.fd,
-                &mut index as *mut _ as *mut _,
-                ptr as *mut _,
-            )
+            bpf_sys::bpf_map_lookup_elem(self.base.fd, &index as *const _ as *const _, ptr as *mut _)
         } < 0
         {
             return None;
@@ -1573,12 +1569,12 @@ impl<'base> ProgramArray<'base> {
     }
 
     /// Get the `fd` of the eBPF program at `index`.
-    pub fn get(&self, mut index: u32) -> Result<RawFd> {
+    pub fn get(&self, index: u32) -> Result<RawFd> {
         let mut fd: RawFd = 0;
         if unsafe {
             bpf_sys::bpf_map_lookup_elem(
                 self.base.fd,
-                &mut index as *mut _ as *mut _,
+                &index as *const _ as *const _,
                 &mut fd as *mut _ as *mut _,
             )
         } < 0
@@ -1606,12 +1602,12 @@ impl<'base> ProgramArray<'base> {
     ///     loader.program("parse_http").unwrap().fd().unwrap(),
     /// );
     /// ```
-    pub fn set(&mut self, mut index: u32, mut fd: RawFd) -> Result<()> {
+    pub fn set(&mut self, index: u32, fd: &RawFd) -> Result<()> {
         let ret = unsafe {
             bpf_sys::bpf_map_update_elem(
                 self.base.fd,
-                &mut index as *mut _ as *mut _,
-                &mut fd as *mut _ as *mut _,
+                &index as *const _ as *const _,
+                fd as *const _ as *const _,
                 0,
             )
         };
@@ -1676,13 +1672,13 @@ impl StackTrace<'_> {
         StackTrace { base: map }
     }
 
-    pub fn get(&mut self, mut id: libc::c_int) -> Option<BpfStackFrames> {
+    pub fn get(&self, id: &libc::c_int) -> Option<BpfStackFrames> {
         unsafe {
             let mut value = MaybeUninit::uninit();
 
             let ret = bpf_sys::bpf_map_lookup_elem(
                 self.base.fd,
-                &mut id as *mut libc::c_int as _,
+                id as *const libc::c_int as _,
                 value.as_mut_ptr() as *mut _,
             );
 
@@ -1694,11 +1690,11 @@ impl StackTrace<'_> {
         }
     }
 
-    pub fn delete(&mut self, id: libc::c_int) -> Result<()> {
+    pub fn delete(&self, id: libc::c_int) -> Result<()> {
         unsafe {
             let ret = bpf_sys::bpf_map_delete_elem(
                 self.base.fd,
-                &id as *const libc::c_int as *mut libc::c_int as _,
+                &id as *const libc::c_int as _,
             );
 
             if ret == 0 {
@@ -1777,12 +1773,12 @@ impl<'a> SockMap<'a> {
         Ok(SockMap { base: map })
     }
 
-    pub fn set(&mut self, mut idx: u32, mut fd: RawFd) -> Result<()> {
+    pub fn set(&self, idx: u32, fd: RawFd) -> Result<()> {
         let ret = unsafe {
             bpf_sys::bpf_map_update_elem(
                 self.base.fd,
-                &mut idx as *mut _ as *mut _,
-                &mut fd as *mut _ as *mut _,
+                &idx as *const _ as *const _,
+                &fd as *const _ as *const _,
                 BPF_ANY.into(), // No condition on the existence of the entry for `idx`.
             )
         };

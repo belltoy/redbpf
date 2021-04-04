@@ -301,7 +301,7 @@ impl PerfMap {
             }
 
             let tm = HashMap::<i32, i32>::new(map).unwrap();
-            tm.set(cpu, fd);
+            tm.set(&cpu, &fd);
 
             Ok(PerfMap {
                 base_ptr: AtomicPtr::new(base_ptr as *mut perf_event_mmap_page),

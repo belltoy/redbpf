@@ -51,7 +51,7 @@ fn main() {
 
         // store the sequence in the `sequence` BPF map so the XDP program can retrieve it
         let seq_map = HashMap::<u8, PortSequence>::new(loader.map("sequence").unwrap()).unwrap();
-        seq_map.set(0u8, sequence);
+        seq_map.set(&0u8, &sequence);
 
         tokio::spawn(async move {
             // process perf events sent by the XDP program
