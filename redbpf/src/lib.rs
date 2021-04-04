@@ -64,6 +64,7 @@ use bpf_sys::{
 use goblin::elf::{reloc::RelocSection, section_header as hdr, Elf, SectionHeader, Sym};
 
 use libc::{self, pid_t};
+// use libc::{__errno_location, EFAULT, ENOENT};
 use std::collections::HashMap as RSHashMap;
 use std::ffi::{CStr, CString};
 use std::fs;
@@ -1767,6 +1768,91 @@ impl<K: Clone, V: Clone> Iterator for MapIter<'_, '_, K, V> {
         Some((key.clone(), self.map.get(key).unwrap()))
     }
 }
+
+// pub struct PerCpuHashMapIter<'a, 'b, K: Clone, V: Clone> {
+//     map: &'a PerCpuHashMap<'b, K, V>,
+//     key: Option<K>,
+// }
+//
+// impl<K: Clone, V: Clone> Iterator for PerCpuHashMapIter<'_, '_, K, V> {
+//     type Item = (K, V);
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         let key = self.key.take();
+//         self.key = match key {
+//             Some(key) => {
+//                 let mut next_key = MaybeUninit::<K>::zeroed();
+//                 let ret = unsafe {
+//                     bpf_sys::bpf_map_get_next_key(
+//                         self.map.base.fd,
+//                         &key as *const _ as *const _,
+//                         &mut next_key as *mut _ as *mut _,
+//                     )
+//                 };
+//                 if ret < 0 {
+//                     None
+//                 } else {
+//                     Some(unsafe { next_key.assume_init() })
+//                 }
+//             }
+//             None => {
+//                 // get the first key
+//                 let mut next_key = MaybeUninit::<K>::zeroed();
+//                 let ret = unsafe {
+//                     bpf_sys::bpf_map_get_next_key(
+//                         self.map.base.fd,
+//                         core::ptr::null(),
+//                         &mut next_key as *mut _ as *mut _,
+//                     )
+//                 };
+//                 if ret < 0 && unsafe { *__errno_location() } == EFAULT {
+//                     // Fall back to try to find a non-existing key.
+//                     static try_values: [u8; 3] = [0, 0xff, 0x55];
+//                     let try_key = try_values.iter().try_fold(None, |acc, &v| {
+//                         let mut key = MaybeUninit::<K>::zeroed();
+//                         unsafe { std::ptr::write_bytes(key.as_mut_prt(), *v, 1); }
+//                         // NOTE: This is from bcc/libbpf.c
+//                         // We want to check the existence of the key but we don't know the size
+//                         // of map's value. So we pass an invalid pointer for value, expect
+//                         // the call to fail and check if the error is ENOENT indicating the
+//                         // key doesn't exist. If we use NULL for the invalid pointer, it might
+//                         // trigger a page fault in kernel and affect performance. Hence we use
+//                         // ~0 which will fail and return fast.
+//                         // This should fail since we pass an invalid pointer for value.
+//                         if bpf_sys::bpf_map_lookup_elem(self.base.fd, &v, (!0) as *mut _) >= 0 {
+//                             return None;
+//                         }
+//                         // This means the key doesn't exist.
+//                         if unsafe { *__errno_location() } == ENOENT {
+//                             Some(v)
+//                         } else {
+//                             None
+//                         }
+//                     })?;
+//                     let ret = unsafe {
+//                         bpf_sys::bpf_map_get_next_key(
+//                         self.map.base.fd,
+//                         &try_key as *const _ as *const _,
+//                         &mut next_key as *mut _ as *mut _,
+//                         )
+//                     };
+//                     if ret < 0 {
+//                         None
+//                     } else {
+//                         Some(unsafe { next_key.assume_init() })
+//                     }
+//                 } else if ret < 0 {
+//                     None
+//                 } else {
+//                     Some(unsafe { next_key.assume_init() })
+//                 }
+//             }
+//         };
+//
+//         let key = self.key.as_ref()?.clone();
+//         Some((key.clone(), self.map.get(&key).unwrap()))
+//     }
+// }
 
 impl StackTrace<'_> {
     pub fn new(map: &Map) -> StackTrace<'_> {
